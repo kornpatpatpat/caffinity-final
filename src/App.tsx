@@ -8,9 +8,12 @@ import { AnimatePresence } from 'motion/react';
 import Onboarding from './components/Onboarding';
 import Dashboard from './components/Dashboard';
 import AddBeverage from './components/AddBeverage';
+import Welcome from './components/Welcome';
+import Info from './components/Info';
 import { UserBaseline, Activity } from './types';
 
 export default function App() {
+  const [onboardingStep, setOnboardingStep] = React.useState(0);
   const [baseline, setBaseline] = React.useState<UserBaseline | null>(() => {
     const saved = localStorage.getItem('caffinity_baseline');
     return saved ? JSON.parse(saved) : null;
@@ -50,6 +53,7 @@ export default function App() {
   const handleReset = () => {
     setBaseline(null);
     setActivities([]);
+    setOnboardingStep(0);
     localStorage.removeItem('caffinity_baseline');
     localStorage.removeItem('caffinity_activities');
   };
@@ -58,7 +62,21 @@ export default function App() {
     <div className="min-h-screen bg-background selection:bg-black selection:text-white">
       <AnimatePresence mode="wait">
         {!baseline ? (
-          <Onboarding onComplete={handleOnboardingComplete} />
+          onboardingStep === 0 ? (
+            <Welcome key="welcome" onNext={() => setOnboardingStep(1)} />
+          ) : onboardingStep === 1 ? (
+            <Info 
+              key="info" 
+              onNext={() => setOnboardingStep(2)} 
+              onBack={() => setOnboardingStep(0)}
+            />
+          ) : (
+            <Onboarding 
+              key="foundation" 
+              onComplete={handleOnboardingComplete} 
+              onBack={() => setOnboardingStep(1)}
+            />
+          )
         ) : (
           <Dashboard 
             baseline={baseline} 

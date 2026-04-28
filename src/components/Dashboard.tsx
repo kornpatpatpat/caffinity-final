@@ -85,8 +85,8 @@ export default function Dashboard({ baseline, activities, onAddClick, onReset }:
       {/* Header */}
       <header className="p-6 flex justify-between items-center bg-[#E5E5E5]">
         <h2 className="text-2xl font-serif italic">Caffinity</h2>
-        <button onClick={onReset} className="p-2 hover:bg-black/5 rounded-full transition-colors" title="Menu">
-          <Menu size={24} />
+        <button onClick={onReset} className="p-2 hover:bg-black/5 rounded-full transition-colors" title="Profile">
+          <User size={24} />
         </button>
       </header>
 
@@ -99,9 +99,9 @@ export default function Dashboard({ baseline, activities, onAddClick, onReset }:
             <div className="flex justify-between items-baseline">
               <div className="space-y-1">
                 <p className="micro-label">Current Intake</p>
-                <div className="flex items-baseline gap-1">
+                <div className="flex items-baseline gap-1 text-black">
                   <span className="text-[64px] font-light leading-none">{isNaN(Math.round(currentIntake)) ? 0 : Math.round(currentIntake)}</span>
-                  <span className="text-xl italic text-black">mg</span>
+                  <span className="text-xl italic">mg</span>
                 </div>
               </div>
               <div className="text-right">
@@ -123,7 +123,7 @@ export default function Dashboard({ baseline, activities, onAddClick, onReset }:
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-6 rounded-none shadow-sm flex flex-col justify-between h-32">
             <p className="micro-label">Sleep Time</p>
-            <p className="text-4xl font-light">{baseline.sleepTime}</p>
+            <p className="text-4xl font-light text-black">{baseline.sleepTime}</p>
           </div>
           <div className={`p-6 rounded-none shadow-sm flex flex-col justify-between h-32 text-white transition-colors duration-500 ${currentIntake > limit ? 'bg-[#FD6116]' : 'bg-black'}`}>
             <div className="flex justify-between items-start">

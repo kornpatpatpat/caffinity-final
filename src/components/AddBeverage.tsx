@@ -101,7 +101,7 @@ export default function AddBeverage({ onAdd, onClose }: AddBeverageProps) {
 
           <div className="pt-6 border-t border-gray-100 flex justify-between items-center">
             <p className="micro-label">Caffeine</p>
-            <p className="text-4xl font-light">{isNaN(calculatedIntensity) ? 0 : calculatedIntensity}mg</p>
+            <p className="text-4xl font-light text-black">{isNaN(calculatedIntensity) ? 0 : calculatedIntensity}mg</p>
           </div>
 
           <Button 

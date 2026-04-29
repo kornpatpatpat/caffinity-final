@@ -27,7 +27,7 @@
 }
 
 .micro-label {
-  @apply text-[10px] uppercase tracking-[0.1em] font-semibold text-black;
+  @apply text-[10px] uppercase tracking-[0.1em] font-semibold;
 }
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";

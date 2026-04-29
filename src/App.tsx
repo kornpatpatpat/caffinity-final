@@ -7,8 +7,10 @@ import React from 'react';
 import { AnimatePresence } from 'motion/react';
 import Onboarding from './components/Onboarding';
 import Dashboard from './components/Dashboard';
+import History from './components/History';
 import AddBeverage from './components/AddBeverage';
 import Welcome from './components/Welcome';
+import Auth from './components/Auth';
 import Info from './components/Info';
 import { UserBaseline, Activity } from './types';
 
@@ -25,6 +27,8 @@ export default function App() {
   });
 
   const [isAdding, setIsAdding] = React.useState(false);
+  const [editingActivity, setEditingActivity] = React.useState<Activity | null>(null);
+  const [view, setView] = React.useState<'dashboard' | 'history'>('dashboard');
 
   React.useEffect(() => {
     if (baseline) {
@@ -50,6 +54,16 @@ export default function App() {
     setIsAdding(false);
   };
 
+  const handleUpdateActivity = (id: string, data: Omit<Activity, 'id' | 'timestamp'>) => {
+    setActivities(activities.map(a => a.id === id ? { ...a, ...data } : a));
+    setEditingActivity(null);
+  };
+
+  const handleDeleteActivity = (id: string) => {
+    setActivities(activities.filter(a => a.id !== id));
+    setEditingActivity(null);
+  };
+
   const handleReset = () => {
     setBaseline(null);
     setActivities([]);
@@ -70,18 +84,35 @@ export default function App() {
               onNext={() => setOnboardingStep(2)} 
               onBack={() => setOnboardingStep(0)}
             />
+          ) : onboardingStep === 2 ? (
+            <Auth 
+              key="auth" 
+              onNext={() => setOnboardingStep(3)} 
+              onBack={() => setOnboardingStep(1)}
+            />
           ) : (
             <Onboarding 
               key="foundation" 
               onComplete={handleOnboardingComplete} 
-              onBack={() => setOnboardingStep(1)}
+              onBack={() => setOnboardingStep(2)}
             />
           )
+        ) : view === 'history' ? (
+          <History 
+            key="history"
+            activities={activities}
+            onBack={() => setView('dashboard')}
+            onEditActivity={(activity) => setEditingActivity(activity)}
+          />
         ) : (
           <Dashboard 
+            key="dashboard"
             baseline={baseline} 
             activities={activities} 
             onAddClick={() => setIsAdding(true)}
+            onEditActivity={(activity) => setEditingActivity(activity)}
+            onHistoryClick={() => setView('history')}
+            onUpdateBaseline={(newBaseline) => setBaseline(newBaseline)}
             onReset={handleReset}
           />
         )}
@@ -92,6 +123,14 @@ export default function App() {
           <AddBeverage 
             onAdd={handleAddActivity} 
             onClose={() => setIsAdding(false)} 
+          />
+        )}
+        {editingActivity && (
+          <AddBeverage 
+            initialActivity={editingActivity}
+            onAdd={(data) => handleUpdateActivity(editingActivity.id, data)}
+            onDelete={() => handleDeleteActivity(editingActivity.id)}
+            onClose={() => setEditingActivity(null)} 
           />
         )}
       </AnimatePresence>

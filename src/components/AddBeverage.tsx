@@ -13,13 +13,25 @@ const ICON_MAP: Record<string, any> = {
 interface AddBeverageProps {
   onAdd: (activity: Omit<Activity, 'id' | 'timestamp'>) => void;
   onClose: () => void;
+  onDelete?: () => void;
+  initialActivity?: Activity;
 }
 
-export default function AddBeverage({ onAdd, onClose }: AddBeverageProps) {
-  const [selectedBev, setSelectedBev] = React.useState<Beverage>(BEVERAGES[0]);
-  const [volume, setVolume] = React.useState(selectedBev.defaultVolume);
+export default function AddBeverage({ onAdd, onClose, onDelete, initialActivity }: AddBeverageProps) {
+  const [selectedBev, setSelectedBev] = React.useState<Beverage>(() => {
+    if (initialActivity) {
+      return BEVERAGES.find(b => b.id === initialActivity.beverageId) || BEVERAGES[0];
+    }
+    return BEVERAGES[0];
+  });
+  const [volume, setVolume] = React.useState(initialActivity?.volume || selectedBev.defaultVolume);
+  const [customCaffeine, setCustomCaffeine] = React.useState<number | null>(
+    initialActivity?.beverageId === 'other' ? initialActivity.mg : null
+  );
 
-  const calculatedIntensity = Math.round(volume * 0.6);
+  const calculatedIntensity = selectedBev.id === 'other' && customCaffeine !== null
+    ? customCaffeine
+    : Math.round(volume * selectedBev.mgPerMl);
 
   const handleAdd = () => {
     onAdd({
@@ -29,6 +41,17 @@ export default function AddBeverage({ onAdd, onClose }: AddBeverageProps) {
       volume: volume,
     });
   };
+
+  React.useEffect(() => {
+    // Only reset if we're not in edit mode or we've switched beverage types
+    if (selectedBev.id === 'other') {
+      if (!initialActivity || (initialActivity && initialActivity.beverageId !== 'other')) {
+        setCustomCaffeine(Math.round(volume * selectedBev.mgPerMl));
+      }
+    } else {
+      setCustomCaffeine(null);
+    }
+  }, [selectedBev.id]);
 
   return (
     <motion.div 
@@ -47,7 +70,7 @@ export default function AddBeverage({ onAdd, onClose }: AddBeverageProps) {
 
       <main className="flex-1 overflow-y-auto px-6 pb-12 space-y-12 max-w-md mx-auto w-full">
         <div className="pt-8 text-center">
-          <h3 className="micro-label mb-8">Select Beverage</h3>
+          <h3 className="micro-label text-black mb-8">Select Beverage</h3>
           <div className="grid grid-cols-3 gap-4">
             {BEVERAGES.map((bev) => {
               const Icon = ICON_MAP[bev.icon];
@@ -76,7 +99,7 @@ export default function AddBeverage({ onAdd, onClose }: AddBeverageProps) {
           <div className="flex justify-between items-baseline">
             <div className="space-y-1">
               <h4 className="text-4xl font-serif">Volume.</h4>
-              <p className="micro-label">Adjust Portion Size</p>
+              <p className="micro-label text-black">Adjust Portion Size</p>
             </div>
             <div className="flex items-baseline gap-1">
               <span className="text-[48px] font-light leading-none">{isNaN(volume) ? 0 : volume}</span>
@@ -86,8 +109,11 @@ export default function AddBeverage({ onAdd, onClose }: AddBeverageProps) {
 
           <div className="space-y-8">
             <Slider 
-              value={isNaN(volume) ? 30 : volume} 
-              onValueChange={(val: any) => setVolume(Array.isArray(val) ? val[0] : val)}
+              value={[isNaN(volume) ? 30 : volume]} 
+              onValueChange={(val: any) => {
+                const newValue = Array.isArray(val) ? val[0] : val;
+                if (!isNaN(newValue)) setVolume(newValue);
+              }}
               min={30}
               max={1000}
               step={10}
@@ -99,22 +125,73 @@ export default function AddBeverage({ onAdd, onClose }: AddBeverageProps) {
             </div>
           </div>
 
-          <div className="pt-6 border-t border-gray-100 flex justify-between items-center">
-            <p className="micro-label">Caffeine</p>
-            <p className="text-4xl font-light text-black">{isNaN(calculatedIntensity) ? 0 : calculatedIntensity}mg</p>
+          <div className="pt-6 border-t border-gray-100 space-y-6">
+            {selectedBev.id === 'other' ? (
+              <div className="space-y-10">
+                <div className="flex justify-between items-baseline">
+                  <div className="space-y-1">
+                    <h4 className="text-4xl font-serif">Caffeine.</h4>
+                    <p className="micro-label text-black">Manual Adjustment</p>
+                  </div>
+                  <div className="flex items-baseline gap-1 text-black">
+                    <span className="text-[48px] font-light leading-none">{customCaffeine}</span>
+                    <span className="text-xl italic">mg</span>
+                  </div>
+                </div>
+                <div className="space-y-8">
+                  <Slider 
+                    value={[customCaffeine || 0]} 
+                    onValueChange={(val: any) => {
+                      const newValue = Array.isArray(val) ? val[0] : val;
+                      if (!isNaN(newValue)) setCustomCaffeine(newValue);
+                    }}
+                    min={0}
+                    max={600}
+                    step={5}
+                    className="py-4 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[11px] font-medium text-black uppercase tracking-widest">
+                    <span>0mg</span>
+                    <span>600mg</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex justify-between items-center">
+                <p className="micro-label text-black">Caffeine Content</p>
+                <p className="text-4xl font-light text-black">
+                  {isNaN(calculatedIntensity) ? 0 : calculatedIntensity}
+                  <span className="text-lg italic ml-1">mg</span>
+                </p>
+              </div>
+            )}
           </div>
 
-          <Button 
-            onClick={handleAdd}
-            className="w-full h-16 rounded-full bg-black text-white hover:bg-black/90 text-lg font-medium transition-transform active:scale-95"
-          >
-            ADD
-          </Button>
+          <div className="flex gap-4">
+            {onDelete && (
+              <Button 
+                onClick={onDelete}
+                variant="outline"
+                className="flex-1 h-16 rounded-full border-red-200 text-red-500 hover:bg-red-50 hover:text-red-600 text-lg font-medium transition-transform active:scale-95"
+              >
+                DELETE
+              </Button>
+            )}
+            <Button 
+              onClick={handleAdd}
+              className={cn(
+                "h-16 rounded-full bg-black text-white hover:bg-black/90 text-lg font-medium transition-transform active:scale-95",
+                onDelete ? "flex-[2]" : "w-full"
+              )}
+            >
+              {initialActivity ? 'UPDATE' : 'ADD'}
+            </Button>
+          </div>
         </div>
       </main>
 
       <footer className="py-8 text-center">
-        <p className="micro-label opacity-30">Caffinity</p>
+        <p className="micro-label text-black opacity-30">Caffinity</p>
       </footer>
     </motion.div>
   );

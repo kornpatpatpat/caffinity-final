@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, Plus, CheckCircle2, Coffee, Zap, Leaf, CupSoda, Utensils, Droplet, PlusSquare, MoreHorizontal, User } from 'lucide-react';
+import { Menu, Plus, CheckCircle2, Coffee, Zap, Leaf, CupSoda, Utensils, Droplet, PlusSquare, MoreHorizontal, User, Calendar } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { Activity, BEVERAGES, UserBaseline } from '@/src/types';
 import { format, addHours, addMinutes, parse, isAfter, differenceInMinutes } from 'date-fns';
@@ -13,31 +13,64 @@ interface DashboardProps {
   baseline: UserBaseline;
   activities: Activity[];
   onAddClick: () => void;
+  onEditActivity: (activity: Activity) => void;
+  onHistoryClick: () => void;
+  onUpdateBaseline: (baseline: UserBaseline) => void;
   onReset: () => void;
 }
 
-export default function Dashboard({ baseline, activities, onAddClick, onReset }: DashboardProps) {
-  const heightInMeters = baseline.height / 100;
-  const bmi = baseline.weight / (heightInMeters * heightInMeters);
-  
-  let dose = 3.0; // default for > 60
-  if (baseline.age < 18) dose = 2.5;
-  else if (baseline.age <= 40) dose = 4.0;
-  else if (baseline.age <= 60) dose = 3.5;
+export const Dashboard: React.FC<DashboardProps> = ({ baseline, activities, onAddClick, onEditActivity, onHistoryClick, onUpdateBaseline, onReset }) => {
+  const [isEditingSleep, setIsEditingSleep] = React.useState(false);
+  const [tempSleepTime, setTempSleepTime] = React.useState(baseline.sleepTime);
 
-  let factor = 0.95; // default for >= 25
-  if (bmi < 18.5) factor = 0.9;
-  else if (bmi <= 24.9) factor = 1.0;
+  React.useEffect(() => {
+    setTempSleepTime(baseline.sleepTime);
+  }, [baseline.sleepTime]);
 
-  let limit = Math.round(dose * factor * baseline.weight);
-  if (isNaN(limit) || limit <= 0) limit = 400; // fallback
+  // Refined Caffeine Metabolism Model
+  const calculateCurrentLoad = (activities: Activity[], targetTime: Date, halfLifeHours: number) => {
+    const halfLifeMinutes = halfLifeHours * 60;
+    return activities.reduce((acc, activity) => {
+      const activityDate = new Date(activity.timestamp);
+      if (isNaN(activityDate.getTime())) return acc;
+      
+      const minutesPassed = differenceInMinutes(targetTime, activityDate);
+      if (minutesPassed < 0) return acc; // Activity is in the future relative to targetTime
+      // Exponential decay formula: N(t) = N0 * (0.5 ^ (t/h))
+      const decay = Math.pow(0.5, minutesPassed / halfLifeMinutes);
+      const remainingMg = activity.mg * (isNaN(decay) ? 0 : decay);
+      return acc + (isNaN(remainingMg) ? 0 : remainingMg);
+    }, 0);
+  };
 
-  const currentIntake = activities.reduce((acc, curr) => acc + curr.mg, 0);
-  const percentage = isNaN(limit) || limit === 0 ? 0 : Math.min((currentIntake / limit) * 100, 100);
-  const remaining = isNaN(limit) || limit === 0 ? 0 : Math.max(limit - currentIntake, 0);
+  // Adjust half-life based on age (Metabolism generally slows with age)
+  let halfLife = 5.7; // Standard average
+  if (baseline.age < 18) halfLife = 3.5; // Children/Adolescents metabolize faster
+  else if (baseline.age > 60) halfLife = 7.0; // Older adults metabolize slower
 
-  // Calculate caffeine window based on half-life decay formula
   const now = new Date();
+  const currentBodyLoad = calculateCurrentLoad(activities, now, halfLife);
+  const currentIntake = activities.reduce((acc, curr) => acc + curr.mg, 0);
+  
+  // Calculate intake limit (personalized)
+  let dosePerKg = 3.0;
+  if (baseline.age < 18) dosePerKg = 2.5;
+  else if (baseline.age <= 40) dosePerKg = 4.0;
+  else if (baseline.age <= 60) dosePerKg = 3.5;
+
+  const bmi = baseline.weight / Math.pow(baseline.height / 100, 2);
+  let bmiFactor = 1.0;
+  if (bmi < 18.5) bmiFactor = 0.9;
+  else if (bmi > 25) bmiFactor = 0.95;
+
+  let limit = Math.round(dosePerKg * bmiFactor * baseline.weight);
+  if (isNaN(limit) || limit <= 0) limit = 400;
+
+  const percentage = Math.min((currentIntake / limit) * 100, 100);
+  const remaining = Math.max(limit - currentIntake, 0);
+
+  // Sleep Window Calculation
+  const sleepThreshold = 50; // mg at bedtime considered safe for sleep onset
   let windowCloseTime = new Date();
   let isWindowOpen = true;
   let hoursLeft = 0;
@@ -46,31 +79,40 @@ export default function Dashboard({ baseline, activities, onAddClick, onReset }:
 
   try {
     const sleepTime = parse(baseline.sleepTime || '23:00', 'HH:mm', new Date());
-    
-    // Handle crossover to next day if sleep time is past midnight (e.g., 01:00) but it's currently evening (e.g., 20:00)
     if (sleepTime.getHours() < 12 && now.getHours() >= 12) {
       sleepTime.setDate(sleepTime.getDate() + 1);
     }
 
-    if (!isNaN(sleepTime.getTime())) {
-      const threshold = 30; // mg
-      const halfLife = 5.5; // hours
-      const caffeineMg = remaining; 
+    if (!isNaN(sleepTime.getTime()) && !isNaN(currentBodyLoad)) {
+      const minutesUntilSleep = differenceInMinutes(sleepTime, now);
+      const decayFactor = Math.pow(0.5, (minutesUntilSleep / (halfLife * 60)));
+      const projectedLoadAtBedtime = currentBodyLoad * (isNaN(decayFactor) ? 0 : decayFactor);
       
-      let t = 0;
-      if (caffeineMg > threshold) {
-        t = halfLife * Math.log2(caffeineMg / threshold);
+      const availableAtBedtime = sleepThreshold - (isNaN(projectedLoadAtBedtime) ? 0 : projectedLoadAtBedtime);
+      
+      if (availableAtBedtime <= 0) {
+        isWindowOpen = false;
+        formattedWindowTime = "Now";
+      } else {
+        // Find when a standard dose (e.g. 80mg / cup of coffee) would decay to the available limit at bedtime
+        const standardDose = 80;
+        const ratio = availableAtBedtime / standardDose;
+        const minutesFromIntakeToSleep = ratio > 0 ? -(halfLife * 60) * Math.log2(ratio) : 0;
+        
+        const offsetMinutes = Math.round(Math.max(0, isNaN(minutesFromIntakeToSleep) ? 0 : minutesFromIntakeToSleep));
+        windowCloseTime = addMinutes(sleepTime, -offsetMinutes);
+        
+        if (!isNaN(windowCloseTime.getTime())) {
+          formattedWindowTime = format(windowCloseTime, 'HH:mm');
+          const minutesLeft = differenceInMinutes(windowCloseTime, now);
+          hoursLeft = Math.floor(minutesLeft / 60);
+          minsLeft = minutesLeft % 60;
+          isWindowOpen = minutesLeft > 0 && currentIntake < limit;
+        }
       }
-
-      windowCloseTime = addMinutes(sleepTime, -Math.round(t * 60));
-      formattedWindowTime = format(windowCloseTime, 'HH:mm');
-      const minutesLeft = differenceInMinutes(windowCloseTime, now);
-      hoursLeft = Math.floor(minutesLeft / 60);
-      minsLeft = minutesLeft % 60;
-      isWindowOpen = !isAfter(now, windowCloseTime) && minutesLeft >= 0 && remaining > 0;
     }
   } catch (e) {
-    // fallback values set initially
+    console.error("Window calculation error:", e);
   }
 
   const greeting = () => {
@@ -85,9 +127,14 @@ export default function Dashboard({ baseline, activities, onAddClick, onReset }:
       {/* Header */}
       <header className="p-6 flex justify-between items-center bg-[#E5E5E5]">
         <h2 className="text-2xl font-serif italic">Caffinity</h2>
-        <button onClick={onReset} className="p-2 hover:bg-black/5 rounded-full transition-colors" title="Profile">
-          <User size={24} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={onHistoryClick} className="p-2 hover:bg-black/5 rounded-full transition-colors" title="History">
+            <Calendar size={24} />
+          </button>
+          <button onClick={onReset} className="p-2 hover:bg-black/5 rounded-full transition-colors" title="Reset Profile">
+            <User size={24} />
+          </button>
+        </div>
       </header>
 
       <main className="flex-1 px-6 pb-24 space-y-8 max-w-md mx-auto w-full">
@@ -98,7 +145,7 @@ export default function Dashboard({ baseline, activities, onAddClick, onReset }:
           <div className="space-y-4">
             <div className="flex justify-between items-baseline">
               <div className="space-y-1">
-                <p className="micro-label">Current Intake</p>
+                <p className="micro-label text-black">Current Intake <span className="opacity-40 italic ml-1">(~{Math.round(currentBodyLoad)}mg in system)</span></p>
                 <div className="flex items-baseline gap-1 text-black">
                   <span className="text-[64px] font-light leading-none">{isNaN(Math.round(currentIntake)) ? 0 : Math.round(currentIntake)}</span>
                   <span className="text-xl italic">mg</span>
@@ -122,12 +169,52 @@ export default function Dashboard({ baseline, activities, onAddClick, onReset }:
         {/* Stats Grid */}
         <div className="grid grid-cols-2 gap-4">
           <div className="bg-white p-6 rounded-none shadow-sm flex flex-col justify-between h-32">
-            <p className="micro-label">Sleep Time</p>
-            <p className="text-4xl font-light text-black">{baseline.sleepTime}</p>
+            <p className="micro-label text-black">Sleep Time</p>
+            {isEditingSleep ? (
+              <div className="flex items-center gap-2">
+                <input 
+                  type="time" 
+                  value={tempSleepTime}
+                  onChange={(e) => setTempSleepTime(e.target.value)}
+                  className="bg-transparent border-b border-black text-xl font-light focus:outline-none w-24"
+                  autoFocus
+                />
+                <div className="flex flex-col gap-1">
+                  <button 
+                    onClick={() => {
+                      onUpdateBaseline({ ...baseline, sleepTime: tempSleepTime });
+                      setIsEditingSleep(false);
+                    }}
+                    className="text-[10px] font-bold uppercase tracking-tight hover:opacity-50 text-black"
+                  >
+                    Save
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setTempSleepTime(baseline.sleepTime);
+                      setIsEditingSleep(false);
+                    }}
+                    className="text-[10px] opacity-40 uppercase tracking-tight hover:opacity-100 text-black"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-baseline justify-between">
+                <p className="text-4xl font-light text-black">{baseline.sleepTime}</p>
+                <button 
+                  onClick={() => setIsEditingSleep(true)}
+                  className="text-[10px] font-bold uppercase tracking-tight opacity-30 hover:opacity-100 transition-opacity"
+                >
+                  Edit
+                </button>
+              </div>
+            )}
           </div>
           <div className={`p-6 rounded-none shadow-sm flex flex-col justify-between h-32 text-white transition-colors duration-500 ${currentIntake > limit ? 'bg-[#FD6116]' : 'bg-black'}`}>
             <div className="flex justify-between items-start">
-              <p className={`micro-label ${currentIntake > limit ? 'text-white/80' : 'text-white'}`}>Status</p>
+              <p className="micro-label text-white">Status</p>
               <CheckCircle2 size={16} className="text-white" />
             </div>
             <p className="text-sm font-bold uppercase tracking-widest">
@@ -160,7 +247,7 @@ export default function Dashboard({ baseline, activities, onAddClick, onReset }:
 
         {/* Activity List */}
         <section className="space-y-6">
-          <h4 className="micro-label">Today's Activity</h4>
+          <h4 className="micro-label text-black">Today's Activity</h4>
           <div className="space-y-6">
             <AnimatePresence initial={false}>
               {activities.length === 0 ? (
@@ -168,22 +255,25 @@ export default function Dashboard({ baseline, activities, onAddClick, onReset }:
               ) : (
                 activities.slice().reverse().map((activity) => {
                   const bev = BEVERAGES.find(b => b.id === activity.beverageId);
+                  const activityDate = new Date(activity.timestamp);
+                  const isValidDate = !isNaN(activityDate.getTime());
                   const Icon = ICON_MAP[bev?.icon || 'Coffee'];
                   return (
                     <motion.div 
                       key={activity.id}
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
-                      className="flex items-center justify-between"
+                      onClick={() => onEditActivity(activity)}
+                      className="flex items-center justify-between cursor-pointer hover:bg-black/5 p-2 -mx-2 rounded-xl transition-colors group"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
+                        <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center group-hover:bg-white transition-colors">
                           <Icon size={20} />
                         </div>
                         <div>
                           <p className="font-medium">{activity.name}</p>
                           <p className="text-xs text-black">
-                            {format(activity.timestamp, 'hh:mm a')} · {activity.volume}ml
+                            {isValidDate ? format(activityDate, 'hh:mm a') : 'Unknown time'} · {activity.volume}ml
                           </p>
                         </div>
                       </div>
@@ -206,8 +296,10 @@ export default function Dashboard({ baseline, activities, onAddClick, onReset }:
       </button>
 
       <footer className="py-8 text-center">
-        <p className="micro-label opacity-30">Caffinity</p>
+        <p className="micro-label text-black opacity-30">Caffinity</p>
       </footer>
     </div>
   );
-}
+};
+
+export default Dashboard;
